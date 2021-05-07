@@ -1,9 +1,23 @@
 <?php
+/**
+ * Coding challenge : https://www.codingame.com/ide/puzzle/don't-panic-episode-2
+ * PHP : 7.2
+ * @version 1.1
+ */
+
+/** @noinspection SelfClassReferencingInspection */
+
+/**
+ * Compatible PHP 7.2
+ */
 
 const __WAIT = 'WAIT';
 const __BLOCK = 'BLOCK';
 const __ELEVATOR = 'ELEVATOR';
 
+/**
+ * Map model
+ */
 class Map
 {
     /** @var Floor[] */
@@ -59,6 +73,9 @@ class Map
     }
 }
 
+/**
+ * LeadingBot Model
+ */
 class LeadingBot
 {
     /** @var \Map */
@@ -122,11 +139,14 @@ class LeadingBot
     }
 }
 
+/**
+ * Floor Model
+ */
 class Floor
 {
     /** @var int */
     private static $count = 0;
-    /** @var int  */
+    /** @var int */
     private $reference;
     /** @var Map */
     private $map;
@@ -259,6 +279,72 @@ class Floor
 }
 
 /**
+ * Main Game class
+ */
+class Game
+{
+
+    public const __DIRECTIVE_WAIT     = 'WAIT';
+    public const __DIRECTIVE_BLOCK    = 'BLOCK';
+    public const __DIRECTIVE_ELEVATOR = 'ELEVATOR';
+
+    /** @var \Map */
+    private $map;
+    /** @var int */
+    private $nbElevators;
+
+    public function __construct(int $nbFloors, int $width, int $nbRounds, int $exitFloor, int $exitPos, int $nbTotalClones, int $nbAdditionalElevators, int $nbElevators)
+    {
+        $this->map = new Map($width, $nbFloors, $exitFloor, $exitPos);
+        $this->nbElevators = $nbElevators;
+    }
+
+    /**
+     * @return \Map
+     */
+    public function getMap()
+    {
+        return $this->map;
+    }
+
+    /**
+     * @return int
+     */
+    public function getNbElevators()
+    {
+        return $this->nbElevators;
+    }
+
+    public function giveDirective($leadingCloneFloor, $leadingClonePosition, $direction)
+    {
+        if ($leadingCloneFloor == -1) {
+            return Game::__DIRECTIVE_WAIT;
+        }
+
+        $leadingClone = new LeadingBot($this->map, $this->map->getFloor($leadingCloneFloor), $leadingClonePosition, $direction);
+
+        $posToGo = $leadingClone->getNextPosition();
+
+        $currentFloor = $leadingClone->getFloor();
+
+        if ($posToGo === null) {
+            $currentFloor->addElevator($leadingClone->getPosition());
+
+            return Game::__DIRECTIVE_ELEVATOR;
+        }
+
+        if ($currentFloor->needBlockade($leadingClone)) {
+            $currentFloor->blockPosition($leadingClone->getPosition());
+
+            return Game::__DIRECTIVE_BLOCK;
+        }
+
+        return Game::__DIRECTIVE_WAIT;
+    }
+
+}
+
+/**
  * Auto-generated code below aims at helping you parse
  * the standard input according to the problem statement.
  **/
@@ -273,53 +359,25 @@ class Floor
 // $nbElevators: number of elevators
 fscanf(STDIN, "%d %d %d %d %d %d %d %d", $nbFloors, $width, $nbRounds, $exitFloor, $exitPos, $nbTotalClones, $nbAdditionalElevators, $nbElevators);
 
-$arrayElevator = array();
-$arrayBlocked = array();
-error_log(var_export($nbAdditionalElevators, true));
+$game = new Game($nbFloors, $width, $nbRounds, $exitFloor, $exitPos, $nbTotalClones, $nbAdditionalElevators, $nbElevators);
 
-$map = new Map($width, $nbFloors, $exitFloor, $exitPos);
-
-for ($i = 0; $i < $nbElevators; $i++) {
+for ($i = 0; $i < $game->getNbElevators(); $i++) {
     // $elevatorFloor: floor on which this elevator is found
     // $elevatorPos: position of the elevator on its floor
     fscanf(STDIN, "%d %d", $elevatorFloor, $elevatorPos);
-    $map->getFloor($elevatorFloor)->addElevator($elevatorPos);
+    $game->getMap()->getFloor($elevatorFloor)->addElevator($elevatorPos);
 }
 
 // game loop
 while (true) {
-    $directive = __WAIT;
-    //error_log(var_export($map, true));
-
     // $leadingCloneFloor: floor of the leading clone
     // $leadingClonePosition: position of the leading clone on its floor
     // $direction: direction of the leading clone: LEFT or RIGHT
     fscanf(STDIN, "%d %d %s", $leadingCloneFloor, $leadingClonePosition, $direction);
 
-    if ($leadingCloneFloor == -1) {
-        echo(__WAIT . "\n");
-        continue;
-    }
-
-    $leadingClone = new LeadingBot($map, $map->getFloor($leadingCloneFloor), $leadingClonePosition, $direction);
-
-    $posToGo = $leadingClone->getNextPosition();
-
-    $currentFloor = $leadingClone->getFloor();
-
-    if ($posToGo === null) {
-        $currentFloor->addElevator($leadingClone->getPosition());
-        echo(__ELEVATOR . "\n");
-        continue;
-    }
-
-    if ($currentFloor->needBlockade($leadingClone)) {
-        $directive = __BLOCK;
-        $currentFloor->blockPosition($leadingClone->getPosition());
-    }
+    $directive = $game->giveDirective($leadingCloneFloor, $leadingClonePosition, $direction);
 
     // Write an action using echo(). DON'T FORGET THE TRAILING \n
     // To debug (equivalent to var_dump): error_log(var_export($var, true));
-
-    echo("$directive\n"); // action: WAIT or BLOCK
+    echo("$directive\n");
 }
