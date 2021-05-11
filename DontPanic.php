@@ -2,7 +2,9 @@
 /**
  * Coding challenge : https://www.codingame.com/ide/puzzle/don't-panic-episode-2
  * PHP : 7.2
- * @version 1.1
+ *
+ * @version 1.2
+ * pass 5/10 tests
  */
 
 /** @noinspection SelfClassReferencingInspection */
@@ -26,6 +28,12 @@ class Map
     private $width;
     /** @var Floor */
     private $exit;
+    /** @var int */
+    private $exitPosition;
+    /** @var Floor */
+    private $startingFloor;
+    /** @var int */
+    private $startingPosition;
 
     /**
      * @return int
@@ -35,7 +43,7 @@ class Map
         return $this->width;
     }
 
-    public function __construct(int $width, int $nbFloors, int $exitFloor, int $exitPosition)
+    public function __construct(int $width, int $nbFloors, int $exitFloor, int $exitPosition, int $startingFloor = null, int $startingPosition = null)
     {
         $this->width = $width;
         for ($nb = 0; $nb < $nbFloors; $nb++) {
@@ -43,17 +51,74 @@ class Map
         }
 
         $this->exit = $this->floors[$exitFloor];
-        $this->exit->addElevator($exitPosition);
+        $this->exitPosition = $exitPosition;
+
+        $this->setStartingPoint($startingFloor, $startingPosition);
+    }
+
+    /**
+     * @param  int|null  $startingFloor
+     * @param  int|null  $startingPosition
+     *
+     * @return Map
+     */
+    public function setStartingPoint(?int $startingFloor, ?int $startingPosition)
+    {
+        if ($startingFloor !== null) {
+            $this->startingFloor = $this->floors[$startingFloor];
+        }
+
+        if ($startingPosition !== null) {
+            $this->startingPosition = $startingPosition;
+        }
+
+        return $this;
+    }
+
+    /**
+     * @param  int  $floor
+     *
+     * @return \Floor
+     */
+    public function getUpperLevel(int $floor)
+    {
+        return $this->getFloor($floor + 1);
+    }
+
+    /**
+     * @return \Floor
+     */
+    public function getStartingFloor()
+    {
+        return $this->startingFloor;
+    }
+
+    /**
+     * @return int
+     */
+    public function getStartingPosition()
+    {
+        return $this->startingPosition;
+    }
+
+    /**
+     * @param  int  $floor
+     *
+     * @return \Floor
+     */
+    public function getLowerLevel(int $floor)
+    {
+        return $this->getFloor($floor - 1);
     }
 
     /**
      * @param  int  $index
      *
-     * @return Floor
+     * @return Floor|null
      */
     public function getFloor(int $index)
     {
-        return $this->floors[$index];
+        return $this->floors[$index] ?? null;
     }
 
     /**
@@ -69,7 +134,7 @@ class Map
      */
     public function getExitPosition()
     {
-        return $this->exit->getElevators()[0];
+        return $this->exitPosition;
     }
 }
 
@@ -121,22 +186,6 @@ class LeadingBot
     {
         return $this->currentFloor;
     }
-
-    /**
-     * @return int|null
-     */
-    public function getNextPosition()
-    {
-        error_log(var_export($this->currentFloor->getReference(), true));
-        error_log(var_export($this->map->getExitFloor()->getReference(), true));
-        //if the leading clone is on exit floor
-        if ($this->currentFloor === $this->map->getExitFloor()) {
-            //position to go is to exit direction
-            return $this->map->getExitPosition();
-        }
-
-        return $this->currentFloor->findClosestElevator($this->currentPosition);
-    }
 }
 
 /**
@@ -147,7 +196,7 @@ class Floor
     /** @var int */
     private static $count = 0;
     /** @var int */
-    private $reference;
+    private $indexFloor;
     /** @var Map */
     private $map;
     /** @var int[] */
@@ -159,15 +208,31 @@ class Floor
     {
         $this->map = $map;
         $this->elevatorPositions = $elevators;
-        $this->reference = ++self::$count;
+        $this->indexFloor = self::$count++;
+    }
+
+    /**
+     * @return \Floor|null
+     */
+    public function getUpperLevel()
+    {
+        return $this->map->getFloor($this->indexFloor + 1);
+    }
+
+    /**
+     * @return \Floor|null
+     */
+    public function getLowerLevel()
+    {
+        return $this->map->getFloor($this->indexFloor - 1);
     }
 
     /**
      * @return int
      */
-    public function getReference()
+    public function getIndexFloor()
     {
-        return $this->reference;
+        return $this->indexFloor;
     }
 
     /**
@@ -176,6 +241,16 @@ class Floor
     public function addElevator(int $position)
     {
         $this->elevatorPositions[] = $position;
+    }
+
+    /**
+     * @param  int  $position
+     *
+     * @return bool
+     */
+    public function hasElevatorAtPosition(int $position)
+    {
+        return in_array($position, $this->elevatorPositions);
     }
 
     /**
@@ -219,62 +294,41 @@ class Floor
     }
 
     /**
-     * @param  int  $currentPosition
-     *
-     * @return int|null
-     */
-    public function findClosestElevator(int $currentPosition)
-    {
-        if (!$this->hasElevators()) {
-            return null;
-        }
-
-        $minPosition = INF;
-        $minDistance = INF;
-
-        foreach ($this->elevatorPositions as $elevatorPosition) {
-            $currentDistance = abs($elevatorPosition - $currentPosition);
-            if ($currentDistance < $minDistance) {
-                $minDistance = $currentDistance;
-                $minPosition = $elevatorPosition;
-            }
-        }
-
-        return $minPosition;
-    }
-
-    /**
      * @param  \LeadingBot  $bot
+     * @param  int|null     $neededPosition
      *
      * @return bool
      */
-    public function needBlockade(LeadingBot $bot)
+    public function needBlockade(LeadingBot $bot, ?int $neededPosition = null)
     {
         if ($this->hasBlockade()) {
             return false;
         }
 
-        $nextPosition = $bot->getNextPosition();
-
-        if ($nextPosition === null) {
+        if ($neededPosition === null) {
             return false;
         }
 
-        if ($bot->getPosition() === $nextPosition) {
+        if ($bot->getPosition() === $neededPosition) {
             return false;
         }
 
         //bot on the left and going left
-        if ($bot->getPosition() < $nextPosition && $bot->getDirection() === LeadingBot::__DIRECTION_LEFT) {
+        if ($bot->getPosition() < $neededPosition && $bot->getDirection() === LeadingBot::__DIRECTION_LEFT) {
             return true;
         }
 
         //bot on the right and going right
-        if ($bot->getPosition() > $nextPosition && $bot->getDirection() === LeadingBot::__DIRECTION_RIGHT) {
+        if ($bot->getPosition() > $neededPosition && $bot->getDirection() === LeadingBot::__DIRECTION_RIGHT) {
             return true;
         }
 
         return false;
+    }
+
+    public function __toString()
+    {
+        return $this->indexFloor . " => " . json_encode($this->elevatorPositions);
     }
 }
 
@@ -288,15 +342,104 @@ class Game
     public const __DIRECTIVE_BLOCK    = 'BLOCK';
     public const __DIRECTIVE_ELEVATOR = 'ELEVATOR';
 
+    /** @var int */
+    private $totalAdditional;
+
+    /** @var array */
+    private $optimalPath;
+
     /** @var \Map */
     private $map;
-    /** @var int */
-    private $nbElevators;
 
     public function __construct(int $nbFloors, int $width, int $nbRounds, int $exitFloor, int $exitPos, int $nbTotalClones, int $nbAdditionalElevators, int $nbElevators)
     {
+        $this->totalAdditional = $nbAdditionalElevators;
         $this->map = new Map($width, $nbFloors, $exitFloor, $exitPos);
-        $this->nbElevators = $nbElevators;
+    }
+
+    public function findBestPath()
+    {
+        $this->optimalPath = [];
+        $this->buildPath($this->map->getExitFloor()->getIndexFloor(), $this->map->getExitPosition(), $this->optimalPath, $this->totalAdditional);
+        error_log(var_export($this->optimalPath, true));
+    }
+
+    /**
+     * finding best path from (top to bottom)
+     *
+     * @param  int    $currentFloorLevel
+     * @param  int    $currentFloorPosition
+     * @param  array  $potentialPath
+     * @param  int    $availableElevatorsForLowerLevel
+     *
+     * @return int
+     */
+    private function buildPath(int $currentFloorLevel, int $currentFloorPosition, array &$potentialPath, int $availableElevatorsForLowerLevel)
+    {
+        $currentFloor = $this->map->getFloor($currentFloorLevel);
+
+        /** OUT OF FLOOR */
+        //First, we check if out of bound
+        if ($currentFloor === null) {
+            return INF;
+        }
+
+        //we set that this is where we go up from this floor
+        $potentialPath[$currentFloorLevel] = $currentFloorPosition;
+
+        /** CLOSE TO STARTING POINT */
+        //if currentFloor on the same floor as starting point
+        if ($currentFloorLevel === $this->map->getStartingFloor()->getIndexFloor()) {
+            //we return distance from this point to starting point
+            return abs($currentFloorPosition - $this->map->getStartingPosition());
+        }
+
+        $lowerFloor = $currentFloor->getLowerLevel();
+
+        //if no lower floor => OUT OF BOUND => WRONG PATH
+        if ($lowerFloor === null) {
+            return INF;
+        }
+
+        //lower floor requires an elevator built but none available => WRONG PATH
+        if ($availableElevatorsForLowerLevel <= 0 && !$lowerFloor->hasElevators()) {
+            return INF;
+        }
+
+        $currentFloorBestPositionLength = INF;
+        $bestPath = $potentialPath;
+        $bestPosition = 0;
+
+        for ($lowerFloorPosition = 1; $lowerFloorPosition <= $this->map->getWidth() - 1; $lowerFloorPosition++) {
+            //we copy the potential path to branch it out
+            $currentPathPosition = $potentialPath;
+
+            //we check that we have can build or use an elevator from this position at lower level
+            if ($availableElevatorsForLowerLevel <= 0 && !$lowerFloor->hasElevatorAtPosition($lowerFloorPosition)) {
+                continue;
+            }
+
+            //check if lower floor can directly elevate us from this position
+            if ($lowerFloor->hasElevatorAtPosition($lowerFloorPosition)) {
+                $lowerFloorBestPositionLength = $this->buildPath($currentFloorLevel - 1, $lowerFloorPosition, $currentPathPosition, $availableElevatorsForLowerLevel);
+            } else {
+                // we need to build a new elevator
+                $lowerFloorBestPositionLength = $this->buildPath($currentFloorLevel - 1, $lowerFloorPosition, $currentPathPosition, $availableElevatorsForLowerLevel - 1);
+            }
+
+            //if the path from this position is shorter than the best one
+            if ($lowerFloorBestPositionLength < $currentFloorBestPositionLength) {
+                $bestPosition = $lowerFloorPosition;
+                //we update the best length
+                $currentFloorBestPositionLength = $lowerFloorBestPositionLength;
+                //we update the best path
+                $bestPath = $currentPathPosition;
+            }
+        }
+
+        $potentialPath = $bestPath;
+
+        return $currentFloorBestPositionLength + abs($currentFloorPosition - $bestPosition);
     }
 
     /**
@@ -307,36 +450,33 @@ class Game
         return $this->map;
     }
 
-    /**
-     * @return int
-     */
-    public function getNbElevators()
-    {
-        return $this->nbElevators;
-    }
-
     public function giveDirective($leadingCloneFloor, $leadingClonePosition, $direction)
     {
         if ($leadingCloneFloor == -1) {
             return Game::__DIRECTIVE_WAIT;
         }
 
-        $leadingClone = new LeadingBot($this->map, $this->map->getFloor($leadingCloneFloor), $leadingClonePosition, $direction);
+        $optimalPosition = $this->optimalPath[$leadingCloneFloor];
 
-        $posToGo = $leadingClone->getNextPosition();
+        error_log(var_export("Floor => " . $leadingCloneFloor, true));
+        error_log(var_export("Position => " . $optimalPosition, true));
+
+        $leadingClone = new LeadingBot($this->map, $this->map->getFloor($leadingCloneFloor), $leadingClonePosition, $direction);
 
         $currentFloor = $leadingClone->getFloor();
 
-        if ($posToGo === null) {
-            $currentFloor->addElevator($leadingClone->getPosition());
-
-            return Game::__DIRECTIVE_ELEVATOR;
-        }
-
-        if ($currentFloor->needBlockade($leadingClone)) {
+        if ($currentFloor->needBlockade($leadingClone, $optimalPosition)) {
             $currentFloor->blockPosition($leadingClone->getPosition());
 
             return Game::__DIRECTIVE_BLOCK;
+        }
+
+        if ($leadingClone->getPosition() === $optimalPosition) {
+            if (!$currentFloor->hasElevatorAtPosition($optimalPosition)) {
+                $currentFloor->addElevator($optimalPosition);
+
+                return Game::__DIRECTIVE_ELEVATOR;
+            }
         }
 
         return Game::__DIRECTIVE_WAIT;
@@ -361,12 +501,14 @@ fscanf(STDIN, "%d %d %d %d %d %d %d %d", $nbFloors, $width, $nbRounds, $exitFloo
 
 $game = new Game($nbFloors, $width, $nbRounds, $exitFloor, $exitPos, $nbTotalClones, $nbAdditionalElevators, $nbElevators);
 
-for ($i = 0; $i < $game->getNbElevators(); $i++) {
+for ($i = 0; $i < $nbElevators; $i++) {
     // $elevatorFloor: floor on which this elevator is found
     // $elevatorPos: position of the elevator on its floor
     fscanf(STDIN, "%d %d", $elevatorFloor, $elevatorPos);
     $game->getMap()->getFloor($elevatorFloor)->addElevator($elevatorPos);
 }
+
+$firstIteration = true;
 
 // game loop
 while (true) {
@@ -374,6 +516,14 @@ while (true) {
     // $leadingClonePosition: position of the leading clone on its floor
     // $direction: direction of the leading clone: LEFT or RIGHT
     fscanf(STDIN, "%d %d %s", $leadingCloneFloor, $leadingClonePosition, $direction);
+
+    if ($firstIteration) {
+        $game->getMap()->setStartingPoint($leadingCloneFloor, $leadingClonePosition);
+
+        $game->findBestPath();
+
+        $firstIteration = false;
+    }
 
     $directive = $game->giveDirective($leadingCloneFloor, $leadingClonePosition, $direction);
 
