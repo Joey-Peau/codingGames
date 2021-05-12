@@ -4,7 +4,7 @@
  * PHP : 7.2
  *
  * @version 1.2
- * pass 5/10 tests
+ * pass 7/10 tests
  */
 
 /** @noinspection SelfClassReferencingInspection */
@@ -390,8 +390,12 @@ class Game
         /** CLOSE TO STARTING POINT */
         //if currentFloor on the same floor as starting point
         if ($currentFloorLevel === $this->map->getStartingFloor()->getIndexFloor()) {
+            $firstBlockTimeOut = 0;
+            if($currentFloorPosition < $this->map->getStartingPosition()){
+                $firstBlockTimeOut = 3;
+            }
             //we return distance from this point to starting point
-            return abs($currentFloorPosition - $this->map->getStartingPosition());
+            return $firstBlockTimeOut + abs($currentFloorPosition - $this->map->getStartingPosition());
         }
 
         $lowerFloor = $currentFloor->getLowerLevel();
