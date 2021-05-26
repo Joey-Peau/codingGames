@@ -1,10 +1,12 @@
 <?php
 /**
+ * Coding challenge : https://www.codingame.com/ide/puzzle/don't-panic-episode-1
  * Coding challenge : https://www.codingame.com/ide/puzzle/don't-panic-episode-2
  * PHP : 7.2
  *
- * @version 1.3
- * pass 9/10 tests
+ * @version 1.4
+ * pass 10/10 tests
+ * 100% success on submit
  */
 
 /** @noinspection SelfClassReferencingInspection */
@@ -186,6 +188,27 @@ class LeadingBot
     {
         return $this->currentFloor;
     }
+
+    /**
+     */
+    public function switchDirection()
+    {
+        $this->direction = self::getOppositeDirection($this->direction);
+    }
+
+    /**
+     * @param  string  $direction
+     *
+     * @return string
+     */
+    public static function getOppositeDirection(string $direction)
+    {
+        if ($direction === LeadingBot::__DIRECTION_RIGHT) {
+            return LeadingBot::__DIRECTION_LEFT;
+        }
+
+        return LeadingBot::__DIRECTION_RIGHT;
+    }
 }
 
 /**
@@ -294,32 +317,33 @@ class Floor
     }
 
     /**
-     * @param  \LeadingBot  $bot
-     * @param  int|null     $neededPosition
+     * @param  int       $currentPosition
+     * @param  string    $currentDirection
+     * @param  int|null  $targetPosition
      *
      * @return bool
      */
-    public function needBlockade(LeadingBot $bot, ?int $neededPosition = null)
+    public function needBlockade(int $currentPosition, string $currentDirection, int $targetPosition = null)
     {
         if ($this->hasBlockade()) {
             return false;
         }
 
-        if ($neededPosition === null) {
+        if ($targetPosition === null) {
             return false;
         }
 
-        if ($bot->getPosition() === $neededPosition) {
+        if ($currentPosition === $targetPosition) {
             return false;
         }
 
-        //bot on the left and going left
-        if ($bot->getPosition() < $neededPosition && $bot->getDirection() === LeadingBot::__DIRECTION_LEFT) {
+        //target destination on the right and going left
+        if ($currentPosition < $targetPosition && $currentDirection === LeadingBot::__DIRECTION_LEFT) {
             return true;
         }
 
-        //bot on the right and going right
-        if ($bot->getPosition() > $neededPosition && $bot->getDirection() === LeadingBot::__DIRECTION_RIGHT) {
+        //target destination on the left and going right
+        if ($currentPosition > $targetPosition && $currentDirection === LeadingBot::__DIRECTION_RIGHT) {
             return true;
         }
 
@@ -345,7 +369,7 @@ class Floor
                     $closestLeft = $elevatorPositions;
                 }
             } elseif ($elevatorPositions > $position) {
-                //fetch closest LEFT
+                //fetch closest RIGHT
                 if ($closestRight === null || abs($position - $closestRight) > abs($elevatorPositions - $position)) {
                     $closestRight = $elevatorPositions;
                 }
@@ -379,6 +403,10 @@ class Game
 
     /** @var \Map */
     private $map;
+    /** @var int */
+    private $nbClones;
+    /** @var int */
+    private $nbRounds;
 
     public function __construct(int $nbFloors, int $width, int $nbRounds, int $exitFloor, int $exitPos, int $nbTotalClones, int $nbAdditionalElevators, int $nbElevators)
     {
@@ -391,112 +419,164 @@ class Game
     public function findBestPath()
     {
         $this->optimalPath = [];
-        $this->buildPath($this->map->getExitFloor()->getIndexFloor(), $this->map->getExitPosition(), $this->optimalPath, $this->totalAdditional, $this->nbClones);
+        $totalLength = $this->buildPathFromTopToBottom(
+            $this->map->getExitFloor()->getIndexFloor(),
+            $this->map->getExitPosition(),
+            $this->optimalPath,
+            $this->totalAdditional,
+            $this->nbClones
+        );
+
+        error_log(var_export($totalLength, true));
+        error_log(var_export($this->optimalPath, true));
+        error_log(var_export($this->nbRounds, true));
+
+        if ($totalLength === INF) {
+            //throw new LogicException("NO PATH FOUND");
+        }
     }
 
+    private const TURN_SAME_POS_AFTER_BLOCK_OR_BUILD = 3;
+    private const TURN_TO_CLIMB                      = 1;
+
+    private static $iteration = 0;
+
     /**
-     * finding best path from (top to bottom)
+     * finding best path from top to bottom
      *
      * @param  int    $currentFloorLevel
-     * @param  int    $currentFloorPosition
-     * @param  array  $potentialPath
+     * @param  int    $currentFloorPositionToTest
+     * @param  array  $potentialPathToTake
      * @param  int    $availableElevatorsForLowerLevel
+     * @param  int    $savedClones
      *
      * @return int
      */
-    private function buildPath(int $currentFloorLevel, int $currentFloorPosition, array &$potentialPath, int $availableElevatorsForLowerLevel, int $availableClones)
+    private function buildPathFromTopToBottom(int $currentFloorLevel, int $currentFloorPositionToTest, array &$potentialPathToTake, int $availableElevatorsForLowerLevel, int $savedClones)
     {
+        //no more clone to save
+        if ($savedClones <= 0) {
+            return INF;
+        }
+
         $currentFloor = $this->map->getFloor($currentFloorLevel);
 
         /** OUT OF FLOOR */
-        //First, we check if out of bound
+        //We check if out of bound
         if ($currentFloor === null) {
             return INF;
         }
 
         //we set that this is where we go up from this floor
-        $potentialPath[$currentFloorLevel] = $currentFloorPosition;
+        $potentialPathToTake[$currentFloorLevel] = $currentFloorPositionToTest;
 
-        /** CLOSE TO STARTING POINT */
-        //if currentFloor on the same floor as starting point
-        if ($currentFloorLevel === $this->map->getStartingFloor()->getIndexFloor()) {
-            $firstBlockRoundWait = 0;
-            if ($currentFloorPosition < $this->map->getStartingPosition()) {
-                $firstBlockRoundWait = 3;
-            }
-
-            //we return distance from this point to starting point
-            return $firstBlockRoundWait + abs($currentFloorPosition - $this->map->getStartingPosition());
-        }
+        $isStartingFloor = ($currentFloorLevel === $this->map->getStartingFloor()->getIndexFloor());
 
         $lowerFloor = $currentFloor->getLowerLevel();
 
-        //if no lower floor => OUT OF BOUND => WRONG PATH
-        if ($lowerFloor === null) {
-            return INF;
-        }
+        //if we can keep going down
+        if (!$isStartingFloor){
+            //if no lower floor => OUT OF BOUND => WRONG PATH
+            if($lowerFloor === null) {
+                return INF;
+            }
 
-        //lower floor requires an elevator built but none available => WRONG PATH
-        if ($availableElevatorsForLowerLevel <= 0 && !$lowerFloor->hasElevators()) {
-            return INF;
-        }
-
-        $currentFloorBestPositionLength = INF;
-        $bestPath = $potentialPath;
-        $bestPosition = 0;
-
-        /** USING ELEVATOR DIRECTLY UNDER CURRENT FLOOR POSITION */
-        if ($lowerFloor->hasElevatorAtPosition($currentFloorPosition)) {
-            //we copy the potential path to branch it out
-            $currentPathPosition = $potentialPath;
-            // we need to build a new elevator
-            $lowerFloorBestPositionLength = $this->buildPath(
-                $currentFloorLevel - 1,
-                $currentFloorPosition,
-                $currentPathPosition,
-                $availableElevatorsForLowerLevel,
-                $availableClones
-            );
-
-            //if the path from this position is shorter than the best one
-            if ($lowerFloorBestPositionLength < $currentFloorBestPositionLength) {
-                $bestPosition = $currentFloorPosition;
-                //we update the best length
-                $currentFloorBestPositionLength = $lowerFloorBestPositionLength;
-                //we update the best path
-                $bestPath = $currentPathPosition;
+            //lower floor requires an elevator built but none available => WRONG PATH
+            if ($availableElevatorsForLowerLevel <= 0 && !$lowerFloor->hasElevators()) {
+                return INF;
             }
         }
 
-        /** CREATING ELEVATOR DIRECTLY UNDER CURRENT FLOOR POSITION POSSIBILITY */
-        if ($availableClones > 1 && $availableElevatorsForLowerLevel > 0 && !$lowerFloor->hasElevatorAtPosition($currentFloorPosition)) {
-            //we copy the potential path to branch it out
-            $currentPathPosition = $potentialPath;
-            // we need to build a new elevator
-            $lowerFloorBestPositionLength = $this->buildPath(
+        /** CLOSE TO STARTING POINT */
+        //if currentFloor on the same floor as starting point
+        if ($isStartingFloor) {
+            $cumulTurnBlockingWaitingClimbing = 0;
+
+            $firstFloorDirection = LeadingBot::__DIRECTION_RIGHT;
+            if ($this->map->getStartingFloor()->needBlockade($this->map->getStartingPosition(), $firstFloorDirection, $currentFloorPositionToTest)) {
+                //block turn
+                $cumulTurnBlockingWaitingClimbing += self::TURN_SAME_POS_AFTER_BLOCK_OR_BUILD;
+                $firstFloorDirection = LeadingBot::__DIRECTION_LEFT;
+            }
+
+            $currentDirection = $firstFloorDirection;
+            for ($i = 1, $iMax = count($potentialPathToTake); $i < $iMax; $i++) {
+                //one turn to go up
+                $cumulTurnBlockingWaitingClimbing += self::TURN_TO_CLIMB;
+
+                $tmpFloor = $this->map->getFloor($i);
+                //out of bound
+                if ($tmpFloor === null) {
+                    return INF;
+                }
+
+                if ($tmpFloor->needBlockade($potentialPathToTake[$i - 1], $currentDirection, $potentialPathToTake[$i])) {
+                    //block/built turn
+                    $cumulTurnBlockingWaitingClimbing += self::TURN_SAME_POS_AFTER_BLOCK_OR_BUILD;
+                    $currentDirection = LeadingBot::getOppositeDirection($currentDirection);
+                    $savedClones--;
+                }
+            }
+
+            //no more clones to save after completing potential path
+            if ($savedClones <= 0) {
+                return INF;
+            }
+
+            //one turn for last floor
+            $cumulTurnBlockingWaitingClimbing += self::TURN_TO_CLIMB;
+
+            //we return the cumul of all the waiting and blocking and climibing + distance from this first floor possibility to starting point
+            return $cumulTurnBlockingWaitingClimbing + abs($currentFloorPositionToTest - $this->map->getStartingPosition());
+        }
+
+
+        $lowerFloorBestPositionToClimbLength = INF;
+        $bestPotentialPathToTake = $potentialPathToTake;
+
+        /** USING ELEVATOR DIRECTLY UNDER CURRENT FLOOR POSITION */
+        if ($lowerFloor->hasElevatorAtPosition($currentFloorPositionToTest)) {
+            // we come from lower floor elevator
+            return $this->buildPathFromTopToBottom(
                 $currentFloorLevel - 1,
-                $currentFloorPosition,
+                $currentFloorPositionToTest,
+                $potentialPathToTake,
+                $availableElevatorsForLowerLevel,
+                $savedClones
+            );
+        }
+
+        /** CREATING ELEVATOR DIRECTLY UNDER CURRENT FLOOR POSITION POSSIBILITY */
+        if ($availableElevatorsForLowerLevel > 0 && !$lowerFloor->hasElevatorAtPosition($currentFloorPositionToTest)) {
+            //we copy the potential path to branch it out
+            $currentPathPosition = $potentialPathToTake;
+            // we need to build a new elevator
+            $lowerFloorBestPathLength = $this->buildPathFromTopToBottom(
+                $currentFloorLevel - 1,
+                $currentFloorPositionToTest,
                 $currentPathPosition,
                 $availableElevatorsForLowerLevel - 1,
-                $availableClones - 1
+                $savedClones - 1
             );
 
+            $lowerFloorBestPathLength += self::TURN_SAME_POS_AFTER_BLOCK_OR_BUILD;
+
             //if the path from this position is shorter than the best one
-            if ($lowerFloorBestPositionLength < $currentFloorBestPositionLength) {
-                $bestPosition = $currentFloorPosition;
+            if ($lowerFloorBestPathLength < $lowerFloorBestPositionToClimbLength) {
                 //we update the best length
-                $currentFloorBestPositionLength = $lowerFloorBestPositionLength;
+                $lowerFloorBestPositionToClimbLength = $lowerFloorBestPathLength;
                 //we update the best path
-                $bestPath = $currentPathPosition;
+                $bestPotentialPathToTake = $currentPathPosition;
             }
         }
 
         /** FETCHING WHERE ELEVATOR CANNOT BE USED/BUILT ON LOWER FLOOR */
-        $closestCurrentFloorElevators = $currentFloor->closestElevators($currentFloorPosition);
+        $closestCurrentFloorElevators = $currentFloor->closestElevators($currentFloorPositionToTest);
         $minLowerPositionNotUsable = $closestCurrentFloorElevators['left'];
         $maxLowerPositionNotUsable = $closestCurrentFloorElevators['right'];
 
         foreach ($lowerFloor->getElevators() as $elevatorPosition) {
+
             if ($minLowerPositionNotUsable !== null && $elevatorPosition <= $minLowerPositionNotUsable) {
                 continue;
             }
@@ -506,31 +586,34 @@ class Game
             }
 
             //we copy the potential path to branch it out
-            $currentPathPosition = $potentialPath;
-            $lowerFloorBestPositionLength = $this->buildPath(
+            $currentPathPosition = $potentialPathToTake;
+            $lowerFloorBestPathLength = $this->buildPathFromTopToBottom(
                 $currentFloorLevel - 1,
                 $elevatorPosition,
                 $currentPathPosition,
                 $availableElevatorsForLowerLevel,
-                $availableClones
+                $savedClones
             );
 
+            $lowerFloorBestPathLength += abs($currentFloorPositionToTest - $elevatorPosition);
+
+            //error_log(var_export(implode('=>',$currentPathPosition),true));
+            //error_log(var_export("Length => " . $lowerFloorBestPathLength,true));
+
             //if the path from this position is shorter than the best one
-            if ($lowerFloorBestPositionLength < $currentFloorBestPositionLength) {
-                $bestPosition = $elevatorPosition;
+            if ($lowerFloorBestPathLength < $lowerFloorBestPositionToClimbLength) {
                 //we update the best length
-                $currentFloorBestPositionLength = $lowerFloorBestPositionLength;
+                $lowerFloorBestPositionToClimbLength = $lowerFloorBestPathLength;
                 //we update the best path
-                $bestPath = $currentPathPosition;
+                $bestPotentialPathToTake = $currentPathPosition;
             }
         }
 
-        $potentialPath = $bestPath;
+        $potentialPathToTake = $bestPotentialPathToTake;
 
-        $finalLength = $currentFloorBestPositionLength + abs($currentFloorPosition - $bestPosition);
+        $finalLength = $lowerFloorBestPositionToClimbLength;
 
-        if($finalLength > $this->nbRounds)
-        {
+        if ($finalLength >= $this->nbRounds) {
             return INF;
         }
 
@@ -557,7 +640,7 @@ class Game
 
         $currentFloor = $leadingClone->getFloor();
 
-        if ($currentFloor->needBlockade($leadingClone, $optimalPosition)) {
+        if ($currentFloor->needBlockade($leadingClone->getPosition(), $leadingClone->getDirection(), $optimalPosition)) {
             $currentFloor->blockPosition($leadingClone->getPosition());
 
             return Game::__DIRECTIVE_BLOCK;
@@ -609,6 +692,7 @@ while (true) {
     // $direction: direction of the leading clone: LEFT or RIGHT
     fscanf(STDIN, "%d %d %s", $leadingCloneFloor, $leadingClonePosition, $direction);
 
+    //error_log(var_export($leadingClonePosition, true));
     if ($firstIteration) {
         $game->getMap()->setStartingPoint($leadingCloneFloor, $leadingClonePosition);
 
