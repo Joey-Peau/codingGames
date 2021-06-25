@@ -3,7 +3,8 @@
  * Coding challenge : https://www.codingame.com/ide/puzzle/the-bridge-episode-2
  * PHP : 7.2
  *
- * @version 0.1
+ * @version 0.2
+ * pass 2/10 tests
  */
 
 /** @noinspection SelfClassReferencingInspection */
@@ -26,6 +27,24 @@ class Bridge
         for ($i = 0, $iMax = count($roadsSettings); $i < $iMax; $i++) {
             $this->roadLanes[$i] = new RoadLane($this, $i, $roadsSettings[$i]);
         }
+    }
+
+    /** @var MotorBike[] */
+    private $bikesAlive = [];
+
+    public function addBike(MotorBike $bike)
+    {
+        $this->bikesAlive[] = $bike;
+    }
+
+    public function totalBikesAlive()
+    {
+        return count($this->bikesAlive);
+    }
+
+    public function getLanes()
+    {
+        return $this->roadLanes;
     }
 
     /**
@@ -54,6 +73,11 @@ class RoadLane
 
     /** @var MotorBike|null */
     private $motorBike;
+
+    public function getPositions()
+    {
+        return $this->isSafePosition;
+    }
 
     /**
      * @param  \MotorBike|null  $bike
@@ -141,6 +165,12 @@ class MotorBike
     public function __construct(RoadLane $currentLane)
     {
         $this->currentLane = $currentLane;
+        $this->currentLane->setMotorBike($this);
+    }
+
+    public function __destruct()
+    {
+        $this->currentLane->setMotorBike(null);
     }
 
     /**
@@ -234,6 +264,9 @@ class Game
 
     private const __MAX_TURNS = 50;
 
+    private $globalSpeed = 0;
+    private $currentYAxis = 0;
+
     /** @var int */
     private $minSurvive;
 
@@ -247,13 +280,67 @@ class Game
         $this->bridge = new Bridge($bridgeSettings);
     }
 
+    public function setSpeed(int $speed)
+    {
+        $this->globalSpeed = $speed;
+    }
+
     /**
      * @return string
      * @todo add description
      */
     public function giveDirective()
     {
-        return self::__DIRECTIVE_SPEED;
+        $bestAlive = 0;
+        $bestDirective = Game::__DIRECTIVE_WAIT;
+
+        $testSpeed = $this->testSpeedUp();
+        if ($testSpeed > $bestAlive) {
+            $bestAlive = $testSpeed;
+            $bestDirective = Game::__DIRECTIVE_SPEED;
+        }
+
+        $testJump = $this->testJump();
+        if ($testJump > $bestAlive) {
+            $bestAlive = $testJump;
+            $bestDirective = Game::__DIRECTIVE_JUMP;
+        }
+
+        $testGoUp = $this->testGoUp();
+        if ($testGoUp > $bestAlive) {
+            $bestAlive = $testGoUp;
+            $bestDirective = Game::__DIRECTIVE_UP;
+        }
+
+        $testGoDown = $this->testGoDown();
+        if ($testGoDown > $bestAlive) {
+            $bestAlive = $testGoDown;
+            $bestDirective = Game::__DIRECTIVE_DOWN;
+        }
+
+        $testWait = $this->testWait();
+        if ($testWait > $bestAlive) {
+            $bestAlive = $testWait;
+            $bestDirective = Game::__DIRECTIVE_WAIT;
+        }
+
+        $testSlow = $this->testSlowDown();
+        if ($testSlow > $bestAlive) {
+            $bestAlive = $testSlow;
+            $bestDirective = Game::__DIRECTIVE_SLOW;
+        }
+
+        if ($bestDirective === Game::__DIRECTIVE_SPEED) {
+            $this->globalSpeed++;
+        }
+
+        if ($bestDirective === Game::__DIRECTIVE_SLOW) {
+            $this->globalSpeed--;
+        }
+
+        $this->currentYAxis = $this->currentYAxis + $this->globalSpeed;
+
+        return $bestDirective;
     }
 
     /**
@@ -265,8 +352,179 @@ class Game
         return $this->bridge;
     }
 
-    private function moveUp()
+    private function testWait()
     {
+        $alive = $this->bridge->totalBikesAlive();
+
+        foreach ($this->bridge->getLanes() as $lane) {
+            if (!$lane->isOccupied()) {
+                continue;
+            }
+
+            for ($position = $this->currentYAxis; $position <= $this->currentYAxis + $this->globalSpeed; $position++) {
+                if (!$lane->isSafePosition($position)) {
+                    $alive--;
+                    continue 2;
+                }
+            }
+        }
+
+        return $alive;
+    }
+
+    private function testSpeedUp()
+    {
+        $alive = $this->bridge->totalBikesAlive();
+
+        foreach ($this->bridge->getLanes() as $lane) {
+            if (!$lane->isOccupied()) {
+                continue;
+            }
+
+            for ($position = $this->currentYAxis; $position <= $this->currentYAxis + $this->globalSpeed + 1; $position++) {
+                if (!$lane->isSafePosition($position)) {
+                    $alive--;
+                    continue 2;
+                }
+            }
+        }
+
+        return $alive;
+    }
+
+    private function testSlowDown()
+    {
+        $alive = $this->bridge->totalBikesAlive();
+
+        foreach ($this->bridge->getLanes() as $lane) {
+            if (!$lane->isOccupied()) {
+                continue;
+            }
+
+            for ($position = $this->currentYAxis; $position <= $this->currentYAxis + $this->globalSpeed - 1; $position++) {
+                if (!$lane->isSafePosition($position)) {
+                    $alive--;
+                    continue 2;
+                }
+            }
+        }
+
+        return $alive;
+    }
+
+    private function testGoUp()
+    {
+        $alive = $this->bridge->totalBikesAlive();
+
+        $totalLanes = count($this->bridge->getLanes());
+
+        $canGoUp = true;
+        //from top to bottom
+        for ($index = 0; $index < $totalLanes; $index++) {
+            $testableLane = $this->bridge->getRoadLaneIndex($index);
+            if ($testableLane === null) {
+                continue;
+            }
+
+            if (!$testableLane->isOccupied()) {
+                continue;
+            }
+
+            for ($position = $this->currentYAxis; $position <= $this->currentYAxis + $this->globalSpeed - 1; $position++) {
+                if (!$testableLane->isSafePosition($position)) {
+                    $alive--;
+                    continue 2;
+                }
+            }
+
+            $upperLane = $testableLane->getUpperLane();
+            if ($upperLane === null) {
+                $canGoUp = false;
+            }
+
+            if ($canGoUp) {
+                $testableLane = $upperLane;
+            }
+
+            for ($position = $this->currentYAxis; $position <= $this->currentYAxis + $this->globalSpeed; $position++) {
+                if (!$testableLane->isSafePosition($position)) {
+                    $alive--;
+                    continue 2;
+                }
+            }
+        }
+
+        return $alive;
+    }
+
+    private function testGoDown()
+    {
+        $alive = $this->bridge->totalBikesAlive();
+
+        $totalLanes = count($this->bridge->getLanes());
+
+        $canGoDown = true;
+        //from top to bottom
+        for ($index = $totalLanes - 1; 0 <= $index; $index--) {
+            $testableLane = $this->bridge->getRoadLaneIndex($index);
+            if ($testableLane === null) {
+                continue;
+            }
+
+            if (!$testableLane->isOccupied()) {
+                continue;
+            }
+
+            for ($position = $this->currentYAxis; $position <= $this->currentYAxis + $this->globalSpeed - 1; $position++) {
+                if (!$testableLane->isSafePosition($position)) {
+                    $alive--;
+                    continue 2;
+                }
+            }
+
+            $lowerLane = $testableLane->getLowerLane();
+            if ($lowerLane === null) {
+                $canGoDown = false;
+            }
+
+            if ($canGoDown) {
+                $testableLane = $lowerLane;
+            }
+
+            for ($position = $this->currentYAxis; $position <= $this->currentYAxis + $this->globalSpeed; $position++) {
+                if (!$testableLane->isSafePosition($position)) {
+                    $alive--;
+                    continue 2;
+                }
+            }
+        }
+
+        return $alive;
+    }
+
+    private function testJump()
+    {
+        $alive = $this->bridge->totalBikesAlive();
+
+        $totalLanes = count($this->bridge->getLanes());
+
+        //from top to bottom
+        for ($index = $totalLanes - 1; 0 <= $index; $index--) {
+            $testableLane = $this->bridge->getRoadLaneIndex($index);
+            if ($testableLane === null) {
+                continue;
+            }
+
+            if (!$testableLane->isOccupied()) {
+                continue;
+            }
+
+            if (!$testableLane->isSafePosition($this->currentYAxis + $this->globalSpeed)) {
+                $alive--;
+            }
+        }
+
+        return $alive;
     }
 }
 
@@ -291,18 +549,20 @@ $firstIteration = true;
 // game loop
 while (true) {
     // $S: the motorbikes' speed
-    if ($firstIteration) {
-        fscanf(STDIN, "%d", $S);
-        for ($i = 0; $i < $M; $i++) {
-            // $X: x coordinate of the motorbike
-            // $Y: y coordinate of the motorbike
-            // $A: indicates whether the motorbike is activated "1" or detroyed "0"
-            fscanf(STDIN, "%d %d %d", $X, $Y, $A);
-            $bike = new MotorBike();
+    fscanf(STDIN, "%d", $S);
+    $game->setSpeed($S);
+    for ($i = 0; $i < $M; $i++) {
+        // $X: x coordinate of the motorbike
+        // $Y: y coordinate of the motorbike
+        // $A: indicates whether the motorbike is activated "1" or detroyed "0"
+        fscanf(STDIN, "%d %d %d", $X, $Y, $A);
+        if ($firstIteration) {
             $bridge = $game->getBridge();
-            $lane = $bridge->getLaneIndex($Y);
+            $lane = $bridge->getRoadLaneIndex($Y);
+            $bike = new MotorBike($lane);
+            $bridge->addBike($bike);
+            $firstIteration = false;
         }
-        $firstIteration = false;
     }
 
     // Write an action using echo(). DON'T FORGET THE TRAILING \n
