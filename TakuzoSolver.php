@@ -4,6 +4,7 @@
  * Auto-generated code below aims at helping you parse
  * the standard input according to the problem statement.
  * https://www.codingame.com/ide/puzzle/takuzu-solver
+ * tests : 4/6 OK
  **/
 class Grid
 {
@@ -167,14 +168,14 @@ class Grid
         }
     }
 
-    private function partialSolveRow(int $row): void
+    private function solveFullRow(int $row): void
     {
         for ($i = 0; $i < count($this->rows[$row]); $i++) {
             $this->solveConsecutiveRowCell($row, $i);
         }
     }
 
-    private function partialSolveCol(int $col): void
+    private function solveFullCol(int $col): void
     {
         for ($i = 0; $i < count($this->rows); $i++) {
             $this->solveConsecutiveColCell($i, $col);
@@ -241,7 +242,6 @@ class Grid
 
     private function solveImpossibleChoiceRow(int $row, int $col): void
     {
-
         //get the number of missing zeros and ones
         $countZeros = 0;
         $countOnes = 0;
@@ -254,9 +254,7 @@ class Grid
         }
         $missingZeros = count($this->rows) / 2 - $countZeros;
         $missingOnes = count($this->rows) / 2 - $countOnes;
-
         //todo check that if a zeros (or one) is placed here, it's would not be valid for the rest of the row.
-        
 
     }
 
@@ -332,8 +330,7 @@ class Grid
 
         $this->solveConsecutiveRowCell($row, $col);
         $this->solveConsecutiveColCell($row, $col);
-
-        $this->solveImpossibleChoiceRow($row, $col);
+        //$this->solveImpossibleChoiceRow($row, $col);
     }
 
     /**
@@ -367,9 +364,9 @@ class Grid
         }
 
         for ($i = 0; $i < count($this->rows); $i++) {
-            $this->partialSolveRow($i);
+            $this->solveFullRow($i);
             $this->solveSumRow($i);
-            $this->partialSolveCol($i);
+            $this->solveFullCol($i);
             $this->solveSumCol($i);
         }
 
@@ -404,6 +401,9 @@ class Grid
         return $value === 0 ? 1 : 0;
     }
 
+    /**
+     * @return string
+     */
     public function __toString()
     {
         $string = '';
@@ -427,13 +427,8 @@ for ($i = 0; $i < $n; $i++) {
 
 error_log($grid);
 error_log("\n");
+
 $grid->solve();
+
 echo $grid;
-
-for ($i = 0; $i < $n; $i++) {
-    // Write an answer using echo(). DON'T FORGET THE TRAILING \n
-    // To debug: error_log(var_export($var, true)); (equivalent to var_dump)
-
-    //echo("0101\n");
-}
 ?>
