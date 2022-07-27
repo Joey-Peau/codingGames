@@ -1,0 +1,67 @@
+<?php
+/**
+ * Auto-generated code below aims at helping you parse
+ * the standard input according to the problem statement.
+ * https://www.codingame.com/ide/puzzle/genome-sequencing
+ **/
+
+//function that takes two string and returns a bigger string merged together by their common part if any
+function listPossibleMergableString($str1, $str2)
+{
+    $biggestString = $str1;
+    $smallestString = $str2;
+    if (strlen($str2) >= strlen($str1)) {
+        $biggestString = $str2;
+        $smallestString = $str1;
+    }
+
+    $list = [];
+    $list[] = $smallestString . $biggestString;
+    $list[] = $biggestString . $smallestString;
+
+    if (strpos($biggestString, $smallestString) !== false) {
+        $list[] = $biggestString;
+    }
+
+    //for every part of the small string, check if it starts the biggest string
+    $endPart = $smallestString;
+    for ($i = 1; $i < strlen($smallestString); $i++) {
+        $endPart = substr($smallestString, -$i, $i);
+        if (strpos($biggestString, $endPart) === 0) {
+            $list[] = substr($smallestString, 0, -$i) . $biggestString;
+        }
+    }
+
+    $startPart = $smallestString;
+    for ($i = 1; $i < strlen($smallestString); $i++) {
+        $endPart = substr($smallestString, 0, $i);
+        if (strpos(strrev($biggestString), strrev($endPart)) === 0) {
+            $list[] = $biggestString . substr($smallestString, -$i, $i);
+        }
+    }
+
+    return array_unique($list);
+}
+
+$arraySubSequence = [];
+
+fscanf(STDIN, "%d", $N);
+for ($i = 0; $i < $N; $i++) {
+    fscanf(STDIN, "%s", $subseq);
+    //add subsequence to array
+    $arraySubSequence[] = $subseq;
+}
+
+//sort array by length the largest first
+usort($arraySubSequence, function ($a, $b) {
+    return strlen($b) <=> strlen($a);
+});
+
+//TODO continue algorithm to find smallest string made of all the subsequences
+
+
+// Write an answer using echo(). DON'T FORGET THE TRAILING \n
+// To debug: error_log(var_export($var, true)); (equivalent to var_dump)
+
+echo("answer\n");
+?>
