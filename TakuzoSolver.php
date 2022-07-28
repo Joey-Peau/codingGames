@@ -6,9 +6,45 @@
  * https://www.codingame.com/ide/puzzle/takuzu-solver
  * tests : 4/6 OK
  **/
+
+class Cell
+{
+    private $x;
+    private $y;
+    private $value;
+
+    public function __construct(int $x, int $y, ?int $value)
+    {
+        $this->x = $x;
+        $this->y = $y;
+        $this->value = $value;
+    }
+
+    public function setValue(?int $value): void
+    {
+        $this->value = $value;
+    }
+
+    public function getValue(): ?int
+    {
+        return $this->value;
+    }
+
+    public function getX(): int
+    {
+        return $this->x;
+    }
+
+    public function getY(): int
+    {
+        return $this->y;
+    }
+}
+
 class Grid
 {
-    private $rows = [];
+    /** @var array<int, Cell[]> */
+    private $cells = [];
 
     /**
      * @param  int  $length
@@ -17,7 +53,7 @@ class Grid
     {
         for ($i = 0; $i < $length; $i++) {
             for ($j = 0; $j < $length; $j++) {
-                $this->rows[$i][$j] = null;
+                $this->cells[$i][$j] = new Cell($i, $j, null);
             }
         }
     }
@@ -32,13 +68,13 @@ class Grid
         for ($i = 0; $i < strlen($input); $i++) {
             switch ($input[$i]) {
                 case '0':
-                    $this->rows[$row][$i] = 0;
+                    $this->cells[$row][$i]->setValue(0);
                     break;
                 case '1':
-                    $this->rows[$row][$i] = 1;
+                    $this->cells[$row][$i]->setValue(1);
                     break;
                 default:
-                    $this->rows[$row][$i] = null;
+                    $this->cells[$row][$i]->setValue(null);
             }
         }
     }
@@ -46,13 +82,13 @@ class Grid
     /**
      * @param  int  $col
      *
-     * @return array
+     * @return array<Cell>
      */
     private function getColumn(int $col): array
     {
         $finalArray = [];
-        foreach ($this->rows as $row) {
-            $finalArray[] = $row[$col];
+        foreach ($this->cells as $cell) {
+            $finalArray[] = $cell[$col];
         }
 
         return $finalArray;
@@ -61,11 +97,62 @@ class Grid
     /**
      * @param  int  $row
      *
-     * @return array
+     * @return array<Cell>
      */
     private function getRow(int $row): array
     {
-        return $this->rows[$row];
+        return $this->cells[$row];
+    }
+
+    private function getCell(int $x, int $y): Cell
+    {
+        return $this->cells[$x][$y];
+    }
+
+    private function solveConsecutiveLineCell(array $cells, int $originCellIndex): void
+    {
+        if ($cells[$originCellIndex]->getValue() !== null) {
+            return;
+        }
+
+        if ($originCellIndex > 0) {
+            $firstLeft = $cells[$originCellIndex - 1];
+        }
+
+        if ($originCellIndex < count($cells) - 1) {
+            $firstRight = $cells[$originCellIndex + 1];
+        }
+
+        //check middle
+        if ($originCellIndex > 0 && $originCellIndex < count($cells) - 1) {
+            if ($firstRight->getValue() !== null && $firstLeft->getValue() === $firstRight->getValue()) {
+                $cells[$originCellIndex]->setValue(Grid::inverseValue($firstLeft->getValue()));
+
+                return;
+            }
+        }
+
+        //check left
+        if ($originCellIndex > 1) {
+            $secondLeft = $cells[$originCellIndex - 2];
+
+            if ($secondLeft->getValue() !== null && $firstLeft->getValue() === $secondLeft->getValue()) {
+                $cells[$originCellIndex]->setValue(Grid::inverseValue($firstLeft->getValue()));
+
+                return;
+            }
+        }
+
+        //check right
+        if ($originCellIndex < count($cells) - 2) {
+            $secondRight = $cells[$originCellIndex + 2];
+
+            if ($secondRight->getValue() !== null && $firstRight->getValue() === $secondRight->getValue()) {
+                $cells[$originCellIndex]->setValue(Grid::inverseValue($firstRight->getValue()));
+
+                return;
+            }
+        }
     }
 
     /**
@@ -74,48 +161,8 @@ class Grid
      */
     private function solveConsecutiveColCell(int $row, int $col): void
     {
-        if ($this->rows[$row][$col] !== null) {
-            return;
-        }
-
-        if ($row > 0) {
-            $firstTop = $this->rows[$row - 1][$col];
-        }
-
-        if ($row < count($this->rows[$row]) - 1) {
-            $firstBottom = $this->rows[$row + 1][$col];
-        }
-
-        //check middle
-        if ($row > 0 && $row < count($this->rows) - 1) {
-            if ($firstBottom !== null && $firstTop === $firstBottom) {
-                $this->rows[$row][$col] = Grid::inverseValue($firstTop);
-
-                return;
-            }
-        }
-
-        //check top
-        if ($row > 1) {
-            $secondTop = $this->rows[$row - 2][$col];
-
-            if ($secondTop !== null && $firstTop === $secondTop) {
-                $this->rows[$row][$col] = Grid::inverseValue($firstTop);
-
-                return;
-            }
-        }
-
-        //check bottom
-        if ($row < count($this->rows) - 2) {
-            $secondBottom = $this->rows[$row + 2][$col];
-
-            if ($secondBottom !== null && $firstBottom === $secondBottom) {
-                $this->rows[$row][$col] = Grid::inverseValue($firstBottom);
-
-                return;
-            }
-        }
+        $cells = $this->getColumn($col);
+        $this->solveConsecutiveLineCell($cells, $row);
     }
 
     /**
@@ -124,72 +171,31 @@ class Grid
      */
     private function solveConsecutiveRowCell(int $row, int $col): void
     {
-        if ($this->rows[$row][$col] !== null) {
-            return;
-        }
-
-        if ($col > 0) {
-            $firstLeft = $this->rows[$row][$col - 1];
-        }
-
-        if ($col < count($this->rows[$row]) - 1) {
-            $firstRight = $this->rows[$row][$col + 1];
-        }
-
-        //check middle
-        if ($col > 0 && $col < count($this->rows) - 1) {
-            if ($firstRight !== null && $firstLeft === $firstRight) {
-                $this->rows[$row][$col] = Grid::inverseValue($firstLeft);
-
-                return;
-            }
-        }
-
-        //check left
-        if ($col > 1) {
-            $secondLeft = $this->rows[$row][$col - 2];
-
-            if ($secondLeft !== null && $firstLeft === $secondLeft) {
-                $this->rows[$row][$col] = Grid::inverseValue($firstLeft);
-
-                return;
-            }
-        }
-
-        //check right
-        if ($col < count($this->rows) - 2) {
-            $secondRight = $this->rows[$row][$col + 2];
-
-            if ($secondRight !== null && $firstRight === $secondRight) {
-                $this->rows[$row][$col] = Grid::inverseValue($firstRight);
-
-                return;
-            }
-        }
+        $this->solveConsecutiveLineCell($this->cells[$row], $col);
     }
 
     private function solveFullRow(int $row): void
     {
-        for ($i = 0; $i < count($this->rows[$row]); $i++) {
+        for ($i = 0; $i < count($this->cells[$row]); $i++) {
             $this->solveConsecutiveRowCell($row, $i);
         }
     }
 
     private function solveFullCol(int $col): void
     {
-        for ($i = 0; $i < count($this->rows); $i++) {
+        for ($i = 0; $i < count($this->cells); $i++) {
             $this->solveConsecutiveColCell($i, $col);
         }
     }
 
     /**
-     * @param  int  $row
+     * @param  array<Cell>  $line
      */
-    private function solveSumRow(int $row): void
+    private function solveSumLine(array $line): void
     {
         $countEmptyCells = 0;
-        foreach ($this->rows[$row] as $value) {
-            if ($value === null) {
+        foreach ($line as $cell) {
+            if ($cell->getValue() === null) {
                 $countEmptyCells++;
             }
         }
@@ -200,17 +206,17 @@ class Grid
         }
 
         $sum = 0;
-        foreach ($this->rows[$row] as $value) {
-            if ($value !== null) {
-                $sum += $value;
+        foreach ($line as $cell) {
+            if ($cell->getValue() !== null) {
+                $sum += $cell->getValue();
             }
         }
 
         //when all 1 completed
-        if ($sum === count($this->rows) / 2) {
-            foreach ($this->rows[$row] as $col => $value) {
-                if ($value === null) {
-                    $this->rows[$row][$col] = 0;
+        if ($sum === count($line) / 2) {
+            foreach ($line as $col => $cell) {
+                if ($cell->getValue() === null) {
+                    $cell->setValue(0);
                 }
             }
 
@@ -218,10 +224,10 @@ class Grid
         }
 
         //when all zeros completed
-        if ($sum === 0 && $countEmptyCells === count($this->rows) / 2) {
-            foreach ($this->rows[$row] as $col => $value) {
-                if ($value === null) {
-                    $this->rows[$row][$col] = 1;
+        if ($sum === 0 && $countEmptyCells === count($line) / 2) {
+            foreach ($line as $cell) {
+                if ($cell->getValue() === null) {
+                    $cell->setValue(1);
                 }
             }
 
@@ -229,33 +235,15 @@ class Grid
         }
 
         //when empty cells plus the sum is half the grid, the empty cells can only be ones
-        if ($sum + $countEmptyCells === count($this->rows) / 2) {
-            foreach ($this->rows[$row] as $col => $value) {
-                if ($value === null) {
-                    $this->rows[$row][$col] = 1;
+        if ($sum + $countEmptyCells === count($line) / 2) {
+            foreach ($line as $cell) {
+                if ($cell->getValue() === null) {
+                    $cell->setValue(1);
                 }
             }
 
             return;
         }
-    }
-
-    private function solveImpossibleChoiceRow(int $row, int $col): void
-    {
-        //get the number of missing zeros and ones
-        $countZeros = 0;
-        $countOnes = 0;
-        foreach ($this->rows[$row] as $value) {
-            if ($value === 0) {
-                $countZeros++;
-            } elseif ($value === 1) {
-                $countOnes++;
-            }
-        }
-        $missingZeros = count($this->rows) / 2 - $countZeros;
-        $missingOnes = count($this->rows) / 2 - $countOnes;
-        //todo check that if a zeros (or one) is placed here, it's would not be valid for the rest of the row.
-
     }
 
     /**
@@ -264,58 +252,15 @@ class Grid
     private function solveSumCol(int $col): void
     {
         $listCols = $this->getColumn($col);
+        $this->solveSumLine($listCols);
+    }
 
-        $countEmptyCells = 0;
-        foreach ($listCols as $value) {
-            if ($value === null) {
-                $countEmptyCells++;
-            }
-        }
-
-        //when not cell is empty, return
-        if ($countEmptyCells === 0) {
-            return;
-        }
-
-        $sum = 0;
-        foreach ($listCols as $value) {
-            if ($value !== null) {
-                $sum += $value;
-            }
-        }
-
-        //when all 1 completed the rest can only be zeros
-        if ($sum === count($this->rows) / 2) {
-            foreach ($listCols as $row => $value) {
-                if ($value === null) {
-                    $this->rows[$row][$col] = 0;
-                }
-            }
-
-            return;
-        }
-
-        //when all zeros completed the rest can only be ones
-        if ($sum === 0 && $countEmptyCells === count($this->rows) / 2) {
-            foreach ($listCols as $row => $value) {
-                if ($value === null) {
-                    $this->rows[$row][$col] = 1;
-                }
-            }
-
-            return;
-        }
-
-        //when empty cells plus the sum is half the grid, the empty cells can only be ones
-        if ($sum + $countEmptyCells === count($this->rows) / 2) {
-            foreach ($listCols as $row => $value) {
-                if ($value === null) {
-                    $this->rows[$row][$col] = 1;
-                }
-            }
-
-            return;
-        }
+    /**
+     * @param  int  $row
+     */
+    private function solveSumRow(int $row): void
+    {
+        $this->solveSumLine($this->cells[$row]);
     }
 
     /**
@@ -324,13 +269,12 @@ class Grid
      */
     public function solveCell(int $row, int $col): void
     {
-        if ($this->rows[$row][$col] !== null) {
+        if ($this->getCell($row, $col)->getValue() !== null) {
             return;
         }
 
         $this->solveConsecutiveRowCell($row, $col);
         $this->solveConsecutiveColCell($row, $col);
-        //$this->solveImpossibleChoiceRow($row, $col);
     }
 
     /**
@@ -338,9 +282,9 @@ class Grid
      */
     public function isComplete(): bool
     {
-        foreach ($this->rows as $row) {
-            foreach ($row as $value) {
-                if ($value === null) {
+        foreach ($this->cells as $rowCell) {
+            foreach ($rowCell as $cell) {
+                if ($cell->getValue() === null) {
                     return false;
                 }
             }
@@ -363,16 +307,16 @@ class Grid
             return null;
         }
 
-        for ($i = 0; $i < count($this->rows); $i++) {
+        for ($i = 0; $i < count($this->cells); $i++) {
             $this->solveFullRow($i);
             $this->solveSumRow($i);
             $this->solveFullCol($i);
             $this->solveSumCol($i);
         }
 
-        for ($row = $currentRow ?? 0; $row < count($this->rows); $row++) {
-            for ($col = 0; $col < count($this->rows); $col++) {
-                if ($this->rows[$row][$col] === null && $currentRow !== $row && $currentCol !== $col) {
+        for ($row = $currentRow ?? 0; $row < count($this->cells); $row++) {
+            for ($col = 0; $col < count($this->cells); $col++) {
+                if ($this->getCell($row, $col)->getValue() === null && $currentRow !== $row && $currentCol !== $col) {
                     return [$row, $col];
                 }
             }
@@ -407,9 +351,9 @@ class Grid
     public function __toString()
     {
         $string = '';
-        foreach ($this->rows as $indexRow => $row) {
-            $string .= implode('', array_map(function ($value) { return $value === null ? '.' : $value; }, $row));
-            if ($indexRow < count($this->rows) - 1) {
+        foreach ($this->cells as $indexRow => $cells) {
+            $string .= implode('', array_map(function (Cell $value) { return $value->getValue() === null ? '.' : $value->getValue(); }, $cells));
+            if ($indexRow < count($this->cells) - 1) {
                 $string .= "\n";
             }
         }
