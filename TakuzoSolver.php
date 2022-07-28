@@ -4,7 +4,7 @@
  * Auto-generated code below aims at helping you parse
  * the standard input according to the problem statement.
  * https://www.codingame.com/ide/puzzle/takuzu-solver
- * tests : 5/6 OK
+ * tests : 6/6 OK
  **/
 
 class Cell
@@ -489,7 +489,6 @@ class Solver
      */
     private function solveRemaindersLine(array $line): void
     {
-        //TODO : implement
         //fetch the number of 1s and 0s to fill in the line
         $countOfOnes = 0;
         $countOfZeros = 0;
@@ -508,7 +507,39 @@ class Solver
         $missingOnes = count($line) / 2 - $countOfOnes;
         $missingZeros = count($line) / 2 - $countOfZeros;
 
-        if ($missingOnes === 1 || $missingZeros === 1) {
+        if ($missingOnes !== 1 && $missingZeros !== 1) {
+            return;
+        }
+
+        $valueToTest = $missingOnes === 1 ? 1 : 0;
+
+        $missingIndexes = [];
+        foreach ($line as $indexCell => $cell) {
+            if ($cell->getValue() === null) {
+                $missingIndexes[] = $indexCell;
+            }
+        }
+
+        //we put 1 at every missing place and fill the others with 0s until one combination makes the line invalid
+        foreach ($missingIndexes as $indexCell) {
+            $clonedArray = array_map(function (Cell $cell) { return clone $cell; }, $line);
+
+            if ($clonedArray[$indexCell]->getValue() === null) {
+                $clonedArray[$indexCell]->setValue($valueToTest);
+            }
+
+            foreach ($missingIndexes as $missingIndex) {
+                if ($clonedArray[$missingIndex]->getValue() === null) {
+                    $clonedArray[$missingIndex]->setValue(Grid::inverseValue($valueToTest));
+                }
+            }
+
+            //we finally have a combination that makes the line invalid, the the value must be the other one
+            if (!$this->isLineValid($clonedArray)) {
+                $line[$indexCell]->setValue(Grid::inverseValue($valueToTest));
+
+                return;
+            }
         }
     }
 
