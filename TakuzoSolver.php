@@ -5,6 +5,7 @@
  * the standard input according to the problem statement.
  * https://www.codingame.com/ide/puzzle/takuzu-solver
  * tests : 6/6 OK
+ * validation 5/6 OK
  **/
 
 class Cell
@@ -263,6 +264,8 @@ class Solver
     private $grid;
     /** @var int */
     public static $iteration = 0;
+    /** @var bool */
+    private static $dataChanged = false;
 
     /**
      * @param  Grid  $grid
@@ -277,23 +280,35 @@ class Solver
      */
     public function solve(): void
     {
-        $pointer = $this->grid->findNextEmptyCell(null, null);
+        self::$dataChanged = false;
+        $nextEmptyCell = $this->grid->findNextEmptyCell(null, null);
 
         self::$iteration++;
 
         $gridSize = $this->grid->getSize();
 
-        while ($pointer !== null) {
+        while ($nextEmptyCell !== null) {
             for ($i = 0; $i < $gridSize; $i++) {
                 $this->solveFullRow($i);
                 $this->solveFullCol($i);
             }
 
-            $this->solveCell($pointer);
-            $pointer = $this->grid->findNextEmptyCell($pointer->getRow(), $pointer->getColumn());
+            $nextEmptyCell = $this->grid->findNextEmptyCell($nextEmptyCell->getRow(), $nextEmptyCell->getColumn());
 
             self::$iteration++;
+
+            if (self::$dataChanged) {
+                self::$dataChanged = false;
+            } else {
+                //no changes made in this iteration, so we can stop
+                break;
+            }
         }
+
+        if ($this->grid->isComplete()) {
+            return;
+        }
+        //TODO brute force guessing
     }
 
     /**
@@ -301,20 +316,30 @@ class Solver
      *
      * @param  array  $listOfLines
      * @param  int    $indexInList
+     *
+     * @throws Exception
      */
     private function solveFullLine(array $listOfLines, int $indexInList): void
     {
         $cells = $listOfLines[$indexInList];
 
+        if (Checker::isLineCompleted($cells)) {
+            if (!Checker::isLineValid($listOfLines, $indexInList, null)) {
+                throw new Exception("Line is not valid");
+            }
+
+            return;
+        }
+
         foreach ($cells as $indexOrigin => $cell) {
             $this->solveConsecutiveLineCell($cells, $indexOrigin);
         }
 
-        $this->solveRemaindersLine($cells);
+        $this->solveIdenticalLines($listOfLines, $indexInList);
 
         $this->solveSumLine($cells);
-
-        $this->solveIdenticalLines($listOfLines, $indexInList);
+        
+        $this->solveRemaindersLine($listOfLines, $indexInList);
     }
 
     /**
@@ -338,32 +363,38 @@ class Solver
         }
 
         //Find pairs left
-        if ($originCellIndex > 1) {
+        if (isset($firstLeft) && $originCellIndex > 1) {
             $secondLeft = $cells[$originCellIndex - 2];
 
             if ($firstLeft->getValue() !== null && $firstLeft->getValue() === $secondLeft->getValue()) {
                 $cells[$originCellIndex]->setValue(Grid::inverseValue($firstLeft->getValue()));
+
+                self::$dataChanged = true;
 
                 return;
             }
         }
 
         //Find pairs right
-        if ($originCellIndex < count($cells) - 2) {
+        if (isset($firstLeft) && isset($firstRight) && $originCellIndex < count($cells) - 2) {
             $secondRight = $cells[$originCellIndex + 2];
 
             if ($firstRight->getValue() !== null && $firstRight->getValue() === $secondRight->getValue()) {
                 $cells[$originCellIndex]->setValue(Grid::inverseValue($firstRight->getValue()));
+
+                self::$dataChanged = true;
 
                 return;
             }
         }
 
         //prevent trios
-        if ($originCellIndex > 0) {
+        if (isset($firstLeft) && isset($firstRight) && $originCellIndex > 0) {
             if ($originCellIndex < count($cells) - 1) {
                 if ($firstLeft->getValue() !== null && $firstLeft->getValue() === $firstRight->getValue()) {
                     $cells[$originCellIndex]->setValue(Grid::inverseValue($firstLeft->getValue()));
+
+                    self::$dataChanged = true;
 
                     return;
                 }
@@ -402,6 +433,7 @@ class Solver
             foreach ($line as $col => $cell) {
                 if ($cell->getValue() === null) {
                     $cell->setValue(0);
+                    self::$dataChanged = true;
                 }
             }
 
@@ -413,6 +445,7 @@ class Solver
             foreach ($line as $cell) {
                 if ($cell->getValue() === null) {
                     $cell->setValue(1);
+                    self::$dataChanged = true;
                 }
             }
 
@@ -424,6 +457,7 @@ class Solver
             foreach ($line as $cell) {
                 if ($cell->getValue() === null) {
                     $cell->setValue(1);
+                    self::$dataChanged = true;
                 }
             }
 
@@ -475,6 +509,7 @@ class Solver
             foreach ($line as $indexCell => $cell) {
                 if ($cell->getValue() === null) {
                     $cell->setValue(Grid::inverseValue($comparaisonLine[$indexCell]->getValue()));
+                    self::$dataChanged = true;
                 }
             }
 
@@ -485,10 +520,12 @@ class Solver
     /**
      * Solve a line based on the first and second rule eliminating impossible values.
      *
-     * @param  array<Cell>  $line
+     * @param  array<int, Cell[]>  $otherLines
+     * @param  int                 $indexLine
      */
-    private function solveRemaindersLine(array $line): void
+    private function solveRemaindersLine(array $otherLines, int $indexLine): void
     {
+        $line = $otherLines[$indexLine];
         //fetch the number of 1s and 0s to fill in the line
         $countOfOnes = 0;
         $countOfZeros = 0;
@@ -508,6 +545,8 @@ class Solver
         $missingZeros = count($line) / 2 - $countOfZeros;
 
         if ($missingOnes !== 1 && $missingZeros !== 1) {
+            //TODO complex remainders Line
+            //FIXME https://www.codingame.com/ide/demo/93755342467d94a7117efb8432f43e759286f7
             return;
         }
 
@@ -520,7 +559,7 @@ class Solver
             }
         }
 
-        //we put 1 at every missing place and fill the others with 0s until one combination makes the line invalid
+        //we put valueToTest at every missing place and fill the others with 0s until one combination makes the line invalid
         foreach ($missingIndexes as $indexCell) {
             $clonedArray = array_map(function (Cell $cell) { return clone $cell; }, $line);
 
@@ -534,66 +573,14 @@ class Solver
                 }
             }
 
-            //we finally have a combination that makes the line invalid, the the value must be the other one
-            if (!$this->isLineValid($clonedArray)) {
+            //we finally have a combination that makes the line invalid, the value must be the other one
+            if (!Checker::isLineValid($otherLines, $indexLine, $clonedArray)) {
                 $line[$indexCell]->setValue(Grid::inverseValue($valueToTest));
+                self::$dataChanged = true;
 
                 return;
             }
         }
-    }
-
-    /**
-     * @param  array<Cell>  $line
-     *
-     * @return bool
-     */
-    private function isLineValid(array $line): bool
-    {
-        $secondLeft = $line[0];
-        $firstLeft = $line[1];
-        $sum = 0;
-        foreach ($line as $indexCell => $cell) {
-            $sum += $cell->getValue();
-
-            //we skip the first two cells
-            if ($indexCell < 2) {
-                continue;
-            }
-
-            //check the first rule
-            if ($secondLeft->getValue() === $firstLeft->getValue() && $firstLeft->getValue() === $cell->getValue()) {
-                return false;
-            }
-
-            $secondLeft = $firstLeft;
-            $firstLeft = $cell;
-        }
-
-        //check the second rule
-        if ($sum !== count($line) / 2) {
-            return false;
-        }
-
-        //TODO check identical lines (third rule)
-
-        return true;
-    }
-
-    /**
-     * @param  array<Cell>  $line
-     *
-     * @return bool
-     */
-    private function isLineCompleted(array $line): bool
-    {
-        foreach ($line as $cell) {
-            if ($cell->getValue() === null) {
-                return false;
-            }
-        }
-
-        return true;
     }
 
     /**
@@ -647,6 +634,114 @@ class Solver
     }
 }
 
+/**
+ * Class checking lines and columns
+ */
+class Checker
+{
+    /**
+     * @param  array<int, Cell[]>  $listOtherLines
+     * @param  int                 $indexLine
+     * @param  array<Cell>|null    $forcedLine
+     *
+     * @return bool
+     */
+    public static function isLineValid(array $listOtherLines, int $indexLine, ?array $forcedLine): bool
+    {
+        $line = $listOtherLines[$indexLine];
+
+        if ($forcedLine !== null) {
+            $line = $forcedLine;
+        }
+
+        $secondLeft = $line[0];
+        $firstLeft = $line[1];
+        $sum = 0;
+        foreach ($line as $indexCell => $cell) {
+            $sum += $cell->getValue();
+
+            //we skip the first two cells
+            if ($indexCell < 2) {
+                continue;
+            }
+
+            //check the first rule
+            if ($secondLeft->getValue() === $firstLeft->getValue() && $firstLeft->getValue() === $cell->getValue()) {
+                return false;
+            }
+
+            $secondLeft = $firstLeft;
+            $firstLeft = $cell;
+        }
+
+        //check the second rule
+        if ($sum !== count($line) / 2) {
+            return false;
+        }
+
+        //check the third rule
+        $isIdentical = static::isLineIdenticalToOther($listOtherLines, $indexLine, $forcedLine);
+
+        return !$isIdentical;
+    }
+
+    /**
+     * @param  array<int, Cell[]>  $comparaisonLines
+     * @param  int                 $indexInList
+     * @param  array<Cell>|null    $forcedLine
+     *
+     * @return bool
+     */
+    public static function isLineIdenticalToOther(array $comparaisonLines, int $indexInList, ?array $forcedLine): bool
+    {
+        $isCellEmpty = function (Cell $cell) { return $cell->getValue() === null; };
+
+        $line = $comparaisonLines[$indexInList];
+        if ($forcedLine !== null) {
+            $line = $forcedLine;
+        }
+
+        foreach ($comparaisonLines as $indexComparaison => $comparaisonLine) {
+            //we do not compare the same line
+            if ($indexComparaison === $indexInList) {
+                continue;
+            }
+            $missingInCurrentLine = count(array_filter($comparaisonLine, $isCellEmpty));
+
+            //we don't care about uncompleted lines
+            if ($missingInCurrentLine !== 0) {
+                continue;
+            }
+
+            //let's compare if the two lines are differents
+            foreach ($line as $indexCell => $cell) {
+                //both line are stricly different so we move to the next line to compare
+                if ($cell->getValue() !== null && $cell->getValue() !== $comparaisonLine[$indexCell]->getValue()) {
+                    continue 2;
+                }
+            }
+
+            //the two lines are stricly identical
+            return true;
+        }
+
+        //every line has been compared and not are identical
+        return false;
+    }
+
+    /**
+     * @param  array  $line
+     *
+     * @return bool
+     */
+    public static function isLineCompleted(array $line): bool
+    {
+        $isCellEmpty = function (Cell $cell) { return $cell->getValue() === null; };
+
+        return count(array_filter($line, $isCellEmpty)) === 0;
+    }
+}
+
 fscanf(STDIN, "%d", $n);
 $grid = new Grid($n);
 for ($i = 0; $i < $n; $i++) {
@@ -660,7 +755,6 @@ error_log("\n");
 $solver = new Solver($grid);
 
 $solver->solve();
-error_log($solver::$iteration);
 
 echo $grid;
 ?>
